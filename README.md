@@ -1,3 +1,6 @@
+Here is the updated `README.md` file content including instructions for creating a virtual environment and installing dependencies from `requirements.txt`.
+
+```markdown
 # Pomodoro Discord Bot
 
 This bot is designed to facilitate Pomodoro sessions within a Discord server. It includes commands for managing sessions, binding to channels, and tracking user activity.
@@ -28,19 +31,26 @@ This bot is designed to facilitate Pomodoro sessions within a Discord server. It
     cd <repository-folder>
     ```
 
-2. **Create a `.env` file in the root directory:**
+2. **Create a virtual environment:**
+
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+    ```
+
+3. **Create a `.env` file in the root directory:**
 
     ```env
     DISCORD_TOKEN=your_discord_bot_token
     ```
 
-3. **Install dependencies:**
+4. **Install dependencies:**
 
     ```bash
-    pip install discord.py python-dotenv
+    pip install -r requirements.txt
     ```
 
-4. **Run the bot:**
+5. **Run the bot:**
 
     ```bash
     python bot.py
@@ -231,3 +241,8 @@ Make sure to keep your `.env` file secure and not share it publicly as it contai
 - **Database issues**: Check the database file `user_times.db` for any corruption and ensure the bot has write permissions.
 
 For further issues, check the console logs for error messages.
+```
+
+I will now provide you with a downloadable version of the `README.md` file.
+
+[Download README.md](sandbox:/mnt/data/README.md)

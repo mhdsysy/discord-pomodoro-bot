@@ -54,23 +54,39 @@ async def on_ready():
     # Sync commands with Discord
     await tree.sync()
 
-    # Send a message to the default channel to hint users about the !pomohelp command
-    default_channel = discord.utils.get(bot.get_all_channels(), guild__name='YOUR_GUILD_NAME', name='general')
-    if default_channel:
-        await default_channel.send('Hello! Use the `/pomohelp` command to see what I can do!')
+    # Define the channel ID you want to send the message to
+    channel_id = 1229180905537667163  # TODO: Remove this
+
+    # Get the channel by ID
+    default_channel = bot.get_channel(channel_id)
+    if not default_channel:
+        print(f'Channel with ID {channel_id} not found.')
+
 
 current_task = None
 bound_channel_id = None
 
+def has_role(role_name: str):
+    async def predicate(interaction: discord.Interaction):
+        if interaction.user.guild_permissions.administrator:
+            return True
+        if discord.utils.get(interaction.user.roles, name=role_name):
+            return True
+        await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+        return False
+    return app_commands.check(predicate)
+
 # Register the slash commands
 @tree.command(name='bind', description='Bind the bot to a specific channel')
+@has_role('mods')
 async def bind(interaction: discord.Interaction, channel: discord.VoiceChannel):
     global bound_channel_id
     bound_channel_id = channel.id
-    await interaction.response.send_message(f"Bot bound to channel {channel.mention}.", ephemeral=True)
+    await interaction.response.send_message(f"Bot bound to channel {channel.mention}.", ephemeral=False)
     print(f"Bot bound to channel ID: {bound_channel_id}")
 
 @tree.command(name='start', description='Start a Pomodoro session')
+@has_role('mods')
 async def start(interaction: discord.Interaction, work_time: int, break_time: int):
     """
     Command to start a Pomodoro session.
@@ -78,18 +94,18 @@ async def start(interaction: discord.Interaction, work_time: int, break_time: in
     """
     global current_task, bound_channel_id
     if bound_channel_id is None:
-        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=True)
+        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=False)
         return
 
     if current_task is not None:
-        await interaction.response.send_message("A Pomodoro session is already running. Please stop the current session before starting a new one.", ephemeral=True)
+        await interaction.response.send_message("A Pomodoro session is already running. Please stop the current session before starting a new one.", ephemeral=False)
         return
 
     channel = bot.get_channel(bound_channel_id)
     if channel is None:
-        await interaction.response.send_message("Invalid channel ID. Use `/bind <channel_id>` to bind a valid channel.", ephemeral=True)
+        await interaction.response.send_message("Invalid channel ID. Use `/bind <channel_id>` to bind a valid channel.", ephemeral=False)
         return
-
+    
     async def pomodoro_session():
         """
         Function to manage the Pomodoro session.
@@ -99,23 +115,28 @@ async def start(interaction: discord.Interaction, work_time: int, break_time: in
         try:
             await channel.send(f"Pomodoro session started for {work_time} minutes of work and {break_time} minutes of break time.")
             while current_task is not None and bound_channel_id is not None:
-                await channel.send(f"@here Pomodoro session started for {work_time} minute(s)!")
-                await asyncio.sleep(work_time * 60)
-                await channel.send(f"@here Pomodoro session ended! Break time for {break_time} minute(s)!")
-                await asyncio.sleep(break_time * 60)
+                # Fetch all members in the channel
+                members = channel.members
+                if members:
+                    # Create a string mentioning each member
+                    mention_message = " ".join([member.mention for member in members])
+                    await channel.send(f"{mention_message} Pomodoro session started for {work_time} minute(s)!")
+                    await asyncio.sleep(work_time * 60)
+                    await channel.send(f"{mention_message} Pomodoro session ended! Break time for {break_time} minute(s)!")
+                    await asyncio.sleep(break_time * 60)
         except asyncio.CancelledError:
             await channel.send("Pomodoro session was stopped.")
             print("Pomodoro session was stopped.")
         finally:
             current_task = None
-            bound_channel_id = None
             print("Pomodoro session task cleaned up.")
 
     current_task = asyncio.create_task(pomodoro_session())
-    await interaction.response.send_message("Pomodoro session task created.", ephemeral=True)
+    await interaction.response.send_message("Pomodoro session task created.", ephemeral=False)
     print("Pomodoro session task started.")
 
 @tree.command(name='unbind', description='Unbind the bot from the current channel and reset the database')
+@has_role('mods')
 async def unbind(interaction: discord.Interaction):
     """
     Command to unbind the bot from the current channel and reset the database.
@@ -123,7 +144,7 @@ async def unbind(interaction: discord.Interaction):
     """
     global bound_channel_id
     if bound_channel_id is None:
-        await interaction.response.send_message("No channel is currently bound.", ephemeral=True)
+        await interaction.response.send_message("No channel is currently bound.", ephemeral=False)
         return
 
     bound_channel_id = None
@@ -133,29 +154,30 @@ async def unbind(interaction: discord.Interaction):
         c = conn.cursor()
         c.execute('DELETE FROM user_times')
         conn.commit()
-        await interaction.response.send_message("Bot has been unbound from the channel and the database has been reset.", ephemeral=True)
+        await interaction.response.send_message("Bot has been unbound from the channel and the database has been reset.", ephemeral=False)
         print("Bot unbound and database reset.")
     except sqlite3.Error as e:
-        await interaction.response.send_message("Error resetting the database.", ephemeral=True)
+        await interaction.response.send_message("Error resetting the database.", ephemeral=False)
         print(f"Database error: {e}")
     finally:
         if conn:
             conn.close()
 
 @tree.command(name='stop', description='Stop the current Pomodoro session')
+@has_role('mods')
 async def stop(interaction: discord.Interaction):
     """
     Command to stop the current Pomodoro session.
     """
     global current_task, bound_channel_id
     if bound_channel_id is None:
-        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=True)
+        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=False)
         return
     if current_task is None:
-        await interaction.response.send_message("No Pomodoro session is currently running.", ephemeral=True)
+        await interaction.response.send_message("No Pomodoro session is currently running.", ephemeral=False)
         return
     current_task.cancel()
-    await interaction.response.send_message("Pomodoro session stopped.", ephemeral=True)
+    await interaction.response.send_message("Pomodoro session stopped.", ephemeral=False)
     print("Pomodoro session stopped by user command.")
 
 @tree.command(name='time', description='Check the total time spent by the user in the bound channel')
@@ -164,7 +186,7 @@ async def time(interaction: discord.Interaction):
     Command to check the total time spent by the user in the bound channel.
     """
     if bound_channel_id is None:
-        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=True)
+        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=False)
         return
     member = interaction.user
     try:
@@ -173,18 +195,18 @@ async def time(interaction: discord.Interaction):
         c.execute('SELECT total_time FROM user_times WHERE user_id = ?', (member.id,))
         row = c.fetchone()
     except sqlite3.Error as e:
-        await interaction.response.send_message("Error retrieving data.", ephemeral=True)
+        await interaction.response.send_message("Error retrieving data.", ephemeral=False)
         print(f"Database error: {e}")
     finally:
         if conn:
             conn.close()
     if row is None:
-        await interaction.response.send_message(f"{member.display_name} has not spent any time in the bound channel.", ephemeral=True)
+        await interaction.response.send_message(f"{member.display_name} has not spent any time in the bound channel.", ephemeral=False)
         print(f"User {member.id} has no recorded time in the bound channel.")
         return
     total_time_seconds = row[0]
     total_time_minutes = total_time_seconds / 60
-    await interaction.response.send_message(f"{member.display_name} has spent {total_time_minutes:.2f} minutes in the bound channel.", ephemeral=True)
+    await interaction.response.send_message(f"{member.display_name} has spent {total_time_minutes:.2f} minutes in the bound channel.", ephemeral=False)
     print(f"User {member.id} has spent {total_time_minutes:.2f} minutes in the bound channel.")
 
 @tree.command(name='leaderboard', description='Display the top 10 users by time spent in the bound channel')
@@ -193,7 +215,7 @@ async def leaderboard(interaction: discord.Interaction):
     Command to display the top 10 users by time spent in the bound channel.
     """
     if bound_channel_id is None:
-        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=True)
+        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=False)
         return
 
     try:
@@ -202,7 +224,7 @@ async def leaderboard(interaction: discord.Interaction):
         c.execute('SELECT user_id, total_time FROM user_times ORDER BY total_time DESC LIMIT 10')
         rows = c.fetchall()
     except sqlite3.Error as e:
-        await interaction.response.send_message("Error retrieving leaderboard data.", ephemeral=True)
+        await interaction.response.send_message("Error retrieving leaderboard data.", ephemeral=False)
         print(f"Database error: {e}")
         return
     finally:
@@ -210,7 +232,7 @@ async def leaderboard(interaction: discord.Interaction):
             conn.close()
 
     if not rows:
-        await interaction.response.send_message("No data available to display the leaderboard.", ephemeral=True)
+        await interaction.response.send_message("No data available to display the leaderboard.", ephemeral=False)
         print("No data available to display the leaderboard.")
         return
 
@@ -221,7 +243,7 @@ async def leaderboard(interaction: discord.Interaction):
         leaderboard_message += f"{idx}. {member.display_name} - {total_time_minutes:.2f} minutes\n"
         print(f"Leaderboard entry {idx}: User {user_id}, Time {total_time_minutes:.2f} minutes")
 
-    await interaction.response.send_message(leaderboard_message, ephemeral=True)
+    await interaction.response.send_message(leaderboard_message, ephemeral=False)
 
 @tree.command(name='pomohelp', description='Display the list of available commands and their usage')
 async def help_command(interaction: discord.Interaction):
@@ -237,7 +259,7 @@ async def help_command(interaction: discord.Interaction):
     `/time` - Check the total time spent in the bound channel.
     `/leaderboard` - Display the top 10 users by time spent in the bound channel.
     """
-    await interaction.response.send_message(help_message, ephemeral=True)
+    await interaction.response.send_message(help_message, ephemeral=False)
     print("Displayed help message.")
 
 @tasks.loop(minutes=1)

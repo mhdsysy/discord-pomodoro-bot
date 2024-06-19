@@ -1,16 +1,16 @@
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 import asyncio
 from dotenv import load_dotenv
 import os
-from datetime import datetime, timezone
 import sqlite3
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Retrieve the Discord token from environment variables
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv('BOT_TOKEN')
 
 # Set up intents for the bot to receive messages
 intents = discord.Intents.default()
@@ -18,7 +18,8 @@ intents.messages = True
 intents.message_content = True  # Enable the message content intent
 
 # Create an instance of the bot with a command prefix and intents
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='/', intents=intents)
+tree = bot.tree  # Use the existing command tree
 
 # Initialize SQLite database
 def init_db():
@@ -50,66 +51,43 @@ async def on_ready():
     print(f'Bot {bot.user.name} has connected to Discord!')
     update_time_spent.start()
 
+    # Sync commands with Discord
+    await tree.sync()
+
     # Send a message to the default channel to hint users about the !pomohelp command
     default_channel = discord.utils.get(bot.get_all_channels(), guild__name='YOUR_GUILD_NAME', name='general')
     if default_channel:
-        await default_channel.send('Hello! Use the `!pomohelp` command to see what I can do!')
+        await default_channel.send('Hello! Use the `/pomohelp` command to see what I can do!')
 
 current_task = None
 bound_channel_id = None
 
-@bot.command(name='bind')
-@commands.has_permissions(administrator=True)
-async def bind(ctx, *args):
-    """
-    Command to bind the bot to a specific channel.
-    Only administrators can use this command.
-    """
+# Register the slash commands
+@tree.command(name='bind', description='Bind the bot to a specific channel')
+async def bind(interaction: discord.Interaction, channel: discord.VoiceChannel):
     global bound_channel_id
-    try:
-        channel_id = int(args[0])
-        print(f'Parsed argument - Channel ID: {channel_id}')
-    except (IndexError, ValueError) as e:
-        await ctx.send("""Invalid or missing channel ID. The command should look like this: `!bind <channel_id>`""")
-        return
-
-    channel = bot.get_channel(channel_id)
-    if channel is None:
-        await ctx.send("Invalid channel ID. Please provide a valid channel ID.")
-        return
-
-    bound_channel_id = channel_id
-    await ctx.send(f"Bot bound to channel {channel.mention}.")
+    bound_channel_id = channel.id
+    await interaction.response.send_message(f"Bot bound to channel {channel.mention}.", ephemeral=True)
     print(f"Bot bound to channel ID: {bound_channel_id}")
 
-@bot.command(name='start')
-@commands.has_permissions(administrator=True)
-async def start(ctx, *args):
+@tree.command(name='start', description='Start a Pomodoro session')
+async def start(interaction: discord.Interaction, work_time: int, break_time: int):
     """
     Command to start a Pomodoro session.
     Only administrators can use this command.
     """
     global current_task, bound_channel_id
     if bound_channel_id is None:
-        await ctx.send("No channel is bound. Use `!bind <channel_id>` to bind a channel first.")
-        return
-
-    try:
-        work_time = int(args[0])
-        break_time = int(args[1])
-        print(f'Parsed arguments - Work time: {work_time}, Break time: {break_time}')
-    except (IndexError, ValueError) as e:
-        await ctx.send("""Some arguments are missing or invalid. The command should look like this: 
-`!start` `<work_time_in_minutes>` `<break_time_in_minutes>`""")
+        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=True)
         return
 
     if current_task is not None:
-        await ctx.send("A Pomodoro session is already running. Please stop the current session before starting a new one.")
+        await interaction.response.send_message("A Pomodoro session is already running. Please stop the current session before starting a new one.", ephemeral=True)
         return
 
     channel = bot.get_channel(bound_channel_id)
     if channel is None:
-        await ctx.send("Invalid channel ID. Use `!bind <channel_id>` to bind a valid channel.")
+        await interaction.response.send_message("Invalid channel ID. Use `/bind <channel_id>` to bind a valid channel.", ephemeral=True)
         return
 
     async def pomodoro_session():
@@ -119,7 +97,7 @@ async def start(ctx, *args):
         """
         global current_task, bound_channel_id
         try:
-            await ctx.send(f"Pomodoro session started for {work_time} minutes of work and {break_time} minutes of break time.")
+            await channel.send(f"Pomodoro session started for {work_time} minutes of work and {break_time} minutes of break time.")
             while current_task is not None and bound_channel_id is not None:
                 await channel.send(f"@here Pomodoro session started for {work_time} minute(s)!")
                 await asyncio.sleep(work_time * 60)
@@ -134,19 +112,18 @@ async def start(ctx, *args):
             print("Pomodoro session task cleaned up.")
 
     current_task = asyncio.create_task(pomodoro_session())
-    await ctx.send("Pomodoro session task created.")
+    await interaction.response.send_message("Pomodoro session task created.", ephemeral=True)
     print("Pomodoro session task started.")
 
-@bot.command(name='unbind')
-@commands.has_permissions(administrator=True)
-async def unbind(ctx):
+@tree.command(name='unbind', description='Unbind the bot from the current channel and reset the database')
+async def unbind(interaction: discord.Interaction):
     """
     Command to unbind the bot from the current channel and reset the database.
     Only administrators can use this command.
     """
     global bound_channel_id
     if bound_channel_id is None:
-        await ctx.send("No channel is currently bound.")
+        await interaction.response.send_message("No channel is currently bound.", ephemeral=True)
         return
 
     bound_channel_id = None
@@ -156,38 +133,120 @@ async def unbind(ctx):
         c = conn.cursor()
         c.execute('DELETE FROM user_times')
         conn.commit()
-        await ctx.send("Bot has been unbound from the channel and the database has been reset.")
+        await interaction.response.send_message("Bot has been unbound from the channel and the database has been reset.", ephemeral=True)
         print("Bot unbound and database reset.")
     except sqlite3.Error as e:
-        await ctx.send("Error resetting the database.")
+        await interaction.response.send_message("Error resetting the database.", ephemeral=True)
         print(f"Database error: {e}")
     finally:
         if conn:
             conn.close()
 
-@bot.command(name='stop')
-async def stop(ctx):
+@tree.command(name='stop', description='Stop the current Pomodoro session')
+async def stop(interaction: discord.Interaction):
     """
     Command to stop the current Pomodoro session.
     """
     global current_task, bound_channel_id
     if bound_channel_id is None:
-        await ctx.send("No channel is bound. Use `!bind <channel_id>` to bind a channel first.")
+        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=True)
         return
     if current_task is None:
-        await ctx.send("No Pomodoro session is currently running.")
+        await interaction.response.send_message("No Pomodoro session is currently running.", ephemeral=True)
         return
     current_task.cancel()
-    await ctx.send("Pomodoro session stopped.")
+    await interaction.response.send_message("Pomodoro session stopped.", ephemeral=True)
     print("Pomodoro session stopped by user command.")
+
+@tree.command(name='time', description='Check the total time spent by the user in the bound channel')
+async def time(interaction: discord.Interaction):
+    """
+    Command to check the total time spent by the user in the bound channel.
+    """
+    if bound_channel_id is None:
+        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=True)
+        return
+    member = interaction.user
+    try:
+        conn = sqlite3.connect('user_times.db')
+        c = conn.cursor()
+        c.execute('SELECT total_time FROM user_times WHERE user_id = ?', (member.id,))
+        row = c.fetchone()
+    except sqlite3.Error as e:
+        await interaction.response.send_message("Error retrieving data.", ephemeral=True)
+        print(f"Database error: {e}")
+    finally:
+        if conn:
+            conn.close()
+    if row is None:
+        await interaction.response.send_message(f"{member.display_name} has not spent any time in the bound channel.", ephemeral=True)
+        print(f"User {member.id} has no recorded time in the bound channel.")
+        return
+    total_time_seconds = row[0]
+    total_time_minutes = total_time_seconds / 60
+    await interaction.response.send_message(f"{member.display_name} has spent {total_time_minutes:.2f} minutes in the bound channel.", ephemeral=True)
+    print(f"User {member.id} has spent {total_time_minutes:.2f} minutes in the bound channel.")
+
+@tree.command(name='leaderboard', description='Display the top 10 users by time spent in the bound channel')
+async def leaderboard(interaction: discord.Interaction):
+    """
+    Command to display the top 10 users by time spent in the bound channel.
+    """
+    if bound_channel_id is None:
+        await interaction.response.send_message("No channel is bound. Use `/bind <channel_id>` to bind a channel first.", ephemeral=True)
+        return
+
+    try:
+        conn = sqlite3.connect('user_times.db')
+        c = conn.cursor()
+        c.execute('SELECT user_id, total_time FROM user_times ORDER BY total_time DESC LIMIT 10')
+        rows = c.fetchall()
+    except sqlite3.Error as e:
+        await interaction.response.send_message("Error retrieving leaderboard data.", ephemeral=True)
+        print(f"Database error: {e}")
+        return
+    finally:
+        if conn:
+            conn.close()
+
+    if not rows:
+        await interaction.response.send_message("No data available to display the leaderboard.", ephemeral=True)
+        print("No data available to display the leaderboard.")
+        return
+
+    leaderboard_message = "🏆 **Top 10 Users by Time Spent in Channel** 🏆\n"
+    for idx, (user_id, total_time) in enumerate(rows, start=1):
+        member = await bot.fetch_user(user_id)
+        total_time_minutes = total_time / 60
+        leaderboard_message += f"{idx}. {member.display_name} - {total_time_minutes:.2f} minutes\n"
+        print(f"Leaderboard entry {idx}: User {user_id}, Time {total_time_minutes:.2f} minutes")
+
+    await interaction.response.send_message(leaderboard_message, ephemeral=True)
+
+@tree.command(name='pomohelp', description='Display the list of available commands and their usage')
+async def help_command(interaction: discord.Interaction):
+    """
+    Command to display the list of available commands and their usage.
+    """
+    help_message = """
+    **Bot Commands:**
+    `/bind <channel_id>` - Bind the bot to a channel.
+    `/start <work_time_in_minutes> <break_time_in_minutes>` - Start a Pomodoro session.
+    `/stop` - Stop the current Pomodoro session.
+    `/unbind` - Unbind the bot from the current channel and reset the database.
+    `/time` - Check the total time spent in the bound channel.
+    `/leaderboard` - Display the top 10 users by time spent in the bound channel.
+    """
+    await interaction.response.send_message(help_message, ephemeral=True)
+    print("Displayed help message.")
 
 @tasks.loop(minutes=1)
 async def update_time_spent():
     """
     Task to update the total time spent by each user in the bound channel.
-    This runs every second.
+    This runs every minute.
     """
-    global bound_channel_id, user_times
+    global bound_channel_id
     if bound_channel_id is None:
         return
     channel = bot.get_channel(bound_channel_id)
@@ -218,88 +277,6 @@ async def update_time_spent():
     finally:
         if conn:
             conn.close()
-
-@bot.command(name='time')
-async def time(ctx):
-    """
-    Command to check the total time spent by the user in the bound channel.
-    """
-    if bound_channel_id is None:
-        await ctx.send("No channel is bound. Use `!bind <channel_id>` to bind a channel first.")
-        return
-    member = ctx.author
-    try:
-        conn = sqlite3.connect('user_times.db')
-        c = conn.cursor()
-        c.execute('SELECT total_time FROM user_times WHERE user_id = ?', (member.id,))
-        row = c.fetchone()
-    except sqlite3.Error as e:
-        await ctx.send("Error retrieving data.")
-        print(f"Database error: {e}")
-    finally:
-        if conn:
-            conn.close()
-    if row is None:
-        await ctx.send(f"{member.display_name} has not spent any time in the bound channel.")
-        print(f"User {member.id} has no recorded time in the bound channel.")
-        return
-    total_time_seconds = row[0]
-    total_time_minutes = total_time_seconds / 60
-    await ctx.send(f"{member.display_name} has spent {total_time_minutes:.2f} minutes in the bound channel.")
-    print(f"User {member.id} has spent {total_time_minutes:.2f} minutes in the bound channel.")
-
-@bot.command(name='leaderboard')
-async def leaderboard(ctx):
-    """
-    Command to display the top 10 users by time spent in the bound channel.
-    """
-    if bound_channel_id is None:
-        await ctx.send("No channel is bound. Use `!bind <channel_id>` to bind a channel first.")
-        return
-
-    try:
-        conn = sqlite3.connect('user_times.db')
-        c = conn.cursor()
-        c.execute('SELECT user_id, total_time FROM user_times ORDER BY total_time DESC LIMIT 10')
-        rows = c.fetchall()
-    except sqlite3.Error as e:
-        await ctx.send("Error retrieving leaderboard data.")
-        print(f"Database error: {e}")
-        return
-    finally:
-        if conn:
-            conn.close()
-
-    if not rows:
-        await ctx.send("No data available to display the leaderboard.")
-        print("No data available to display the leaderboard.")
-        return
-
-    leaderboard_message = "🏆 **Top 10 Users by Time Spent in Channel** 🏆\n"
-    for idx, (user_id, total_time) in enumerate(rows, start=1):
-        member = await bot.fetch_user(user_id)
-        total_time_minutes = total_time / 60
-        leaderboard_message += f"{idx}. {member.display_name} - {total_time_minutes:.2f} minutes\n"
-        print(f"Leaderboard entry {idx}: User {user_id}, Time {total_time_minutes:.2f} minutes")
-
-    await ctx.send(leaderboard_message)
-
-@bot.command(name='pomohelp')
-async def help_command(ctx):
-    """
-    Command to display the list of available commands and their usage.
-    """
-    help_message = """
-    **Bot Commands:**
-    `!bind <channel_id>` - Bind the bot to a channel.
-    `!start <work_time_in_minutes> <break_time_in_minutes>` - Start a Pomodoro session.
-    `!stop` - Stop the current Pomodoro session.
-    `!unbind` - Unbind the bot from the current channel and reset the database.
-    `!time` - Check the total time spent in the bound channel.
-    `!leaderboard` - Display the top 10 users by time spent in the bound channel.
-    """
-    await ctx.send(help_message)
-    print("Displayed help message.")
 
 # Run the bot with the specified token
 bot.run(TOKEN)

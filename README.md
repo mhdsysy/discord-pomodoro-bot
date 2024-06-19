@@ -1,240 +1,101 @@
-# Pomodoro Discord Bot
+# PomodoroBot
 
-This bot is designed to facilitate Pomodoro sessions within a Discord server. It includes commands for managing sessions, binding to channels, and tracking user activity.
+PomodoroBot is a Discord bot designed to help users manage their time using the Pomodoro technique. This bot allows users to start, stop, and manage Pomodoro sessions, track the time spent, and view leaderboards.
 
 ## Features
 
-- **Bind and Unbind**: Attach the bot to specific channels.
-- **Start and Stop Pomodoro Sessions**: Admins can start and stop Pomodoro sessions.
-- **Time Tracking**: Track the time users spend in the bound channel.
-- **Leaderboard**: Display the top 10 users by time spent in the channel.
+- **Bind to Channel**: Bind the bot to a specific voice channel.
+- **Start Pomodoro Session**: Start a Pomodoro session with specified work and break times.
+- **Stop Pomodoro Session**: Stop the current Pomodoro session.
+- **Unbind and Reset**: Unbind the bot from the current channel and reset the database.
+- **Check Time**: Check the total time spent by the user in the bound channel.
+- **Leaderboard**: Display the top 10 users by time spent in the bound channel.
 - **Help Command**: Display the list of available commands and their usage.
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.6 or higher
-- Discord.py library
-- SQLite3
-- `python-dotenv` library for managing environment variables
-
-### Installation
-
-1. **Clone the repository:**
-
-    ```bash
-    git clone <repository-url>
-    cd <repository-folder>
-    ```
-
-2. **Create a virtual environment:**
-
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-    ```
-
-3. **Create a `.env` file in the root directory:**
-
-    ```env
-    DISCORD_TOKEN=your_discord_bot_token
-    ```
-
-4. **Install dependencies:**
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-5. **Run the bot:**
-
-    ```bash
-    python bot.py
-    ```
 
 ## Commands
 
-### Admin Commands
+- `/bind <channel_id>`: Bind the bot to a channel.
+- `/start <work_time_in_minutes> <break_time_in_minutes>`: Start a Pomodoro session.
+- `/stop`: Stop the current Pomodoro session.
+- `/unbind`: Unbind the bot from the current channel and reset the database.
+- `/time`: Check the total time spent in the bound channel.
+- `/leaderboard`: Display the top 10 users by time spent in the bound channel.
+- `/pomohelp`: Display the list of available commands and their usage.
 
-- `!bind <channel_id>`: Bind the bot to a specific channel. Only administrators can use this command.
-- `!unbind`: Unbind the bot from the current channel and reset the database. Only administrators can use this command.
-- `!start <work_time_in_minutes> <break_time_in_minutes>`: Start a Pomodoro session. Only administrators can use this command.
-- `!stop`: Stop the current Pomodoro session. Only administrators can use this command.
+## Usage Example
 
-### User Commands
+1. **Bind the Bot to a Channel**
 
-- `!time`: Check the total time spent by the user in the bound channel.
-- `!leaderboard`: Display the top 10 users by time spent in the bound channel.
-- `!pomohelp`: Display the list of available commands and their usage.
+    ```plaintext
+    /bind <channel_id>
+    ```
 
-## Code Overview
+2. **Start a Pomodoro Session**
 
-### Environment Setup
+    ```plaintext
+    /start 25 5
+    ```
 
-```python
-from dotenv import load_dotenv
-import os
+    This will start a Pomodoro session with 25 minutes of work and 5 minutes of break time.
 
-load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
-```
+3. **Stop the Current Pomodoro Session**
 
-This part loads the environment variables from a `.env` file and retrieves the Discord bot token.
+    ```plaintext
+    /stop
+    ```
 
-### Bot Initialization
+4. **Unbind the Bot and Reset the Database**
 
-```python
-intents = discord.Intents.default()
-intents.messages = True
-intents.message_content = True
+    ```plaintext
+    /unbind
+    ```
 
-bot = commands.Bot(command_prefix='!', intents=intents)
-```
+5. **Check Total Time Spent**
 
-The bot is initialized with specific intents to handle messages and message content.
+    ```plaintext
+    /time
+    ```
 
-### Database Initialization
+6. **Display the Leaderboard**
 
-```python
-def init_db():
-    try:
-        conn = sqlite3.connect('user_times.db')
-        c = conn.cursor()
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS user_times (
-                user_id INTEGER PRIMARY KEY,
-                total_time REAL
-            )
-        ''')
-        conn.commit()
-        print("Database initialized successfully.")
-    except sqlite3.Error as e:
-        print(f"Database error: {e}")
-    finally:
-        if conn:
-            conn.close()
+    ```plaintext
+    /leaderboard
+    ```
 
-init_db()
-```
+7. **Display Help Message**
 
-An SQLite database is initialized to store user times.
+    ```plaintext
+    /pomohelp
+    ```
 
-### Event Handling
+## Docker Setup
 
-```python
-@bot.event
-async def on_ready():
-    print(f'Bot {bot.user.name} has connected to Discord!')
-    update_time_spent.start()
+To run the bot using Docker, follow these steps:
 
-    default_channel = discord.utils.get(bot.get_all_channels(), guild__name='YOUR_GUILD_NAME', name='general')
-    if default_channel:
-        await default_channel.send('Hello! Use the `!pomohelp` command to see what I can do!')
-```
+1. **Build the Docker Image**
 
-This event handler runs when the bot is ready and starts the `update_time_spent` task.
+    ```bash
+    docker build -t pomodorobot .
+    ```
 
-### Commands
+2. **Run the Docker Container**
 
-#### Bind Command
+    ```bash
+    docker run -d --name pomodorobot -v $(pwd)/user_times.db:/app/user_times.db --env-file .env pomodorobot
+    ```
 
-```python
-@bot.command(name='bind')
-@commands.has_permissions(administrator=True)
-async def bind(ctx, *args):
-    ...
-```
+    This command will run the bot in a Docker container and mount the SQLite database file from the host machine.
 
-This command binds the bot to a specific channel.
+## Environment Variables
 
-#### Start Command
+The bot requires a `.env` file with the following environment variable:
 
-```python
-@bot.command(name='start')
-@commands.has_permissions(administrator=True)
-async def start(ctx, *args):
-    ...
-```
+- `BOT_TOKEN`: Your Discord bot token.
 
-This command starts a Pomodoro session.
+## Database
 
-#### Unbind Command
+The bot uses an SQLite database (`user_times.db`) to store user times. The database is initialized automatically when the bot starts.
 
-```python
-@bot.command(name='unbind')
-@commands.has_permissions(administrator=True)
-async def unbind(ctx):
-    ...
-```
+## License
 
-This command unbinds the bot from the current channel and resets the database.
-
-#### Stop Command
-
-```python
-@bot.command(name='stop')
-async def stop(ctx):
-    ...
-```
-
-This command stops the current Pomodoro session.
-
-### Time Tracking Task
-
-```python
-@tasks.loop(minutes=1)
-async def update_time_spent():
-    ...
-```
-
-This task updates the total time spent by each user in the bound channel.
-
-### User Commands
-
-#### Time Command
-
-```python
-@bot.command(name='time')
-async def time(ctx):
-    ...
-```
-
-This command checks the total time spent by the user in the bound channel.
-
-#### Leaderboard Command
-
-```python
-@bot.command(name='leaderboard')
-async def leaderboard(ctx):
-    ...
-```
-
-This command displays the top 10 users by time spent in the bound channel.
-
-#### Help Command
-
-```python
-@bot.command(name='pomohelp')
-async def help_command(ctx):
-    ...
-```
-
-This command displays the list of available commands and their usage.
-
-## Running the Bot
-
-Run the bot using:
-
-```bash
-python bot.py
-```
-
-Make sure to keep your `.env` file secure and not share it publicly as it contains your bot token.
-
-## Troubleshooting
-
-- **Bot not responding**: Ensure the bot has the necessary permissions in the Discord server and the token is correctly specified.
-- **Database issues**: Check the database file `user_times.db` for any corruption and ensure the bot has write permissions.
-
-For further issues, check the console logs for error messages.
+This project is licensed under the MIT License. See the LICENSE file for details.
